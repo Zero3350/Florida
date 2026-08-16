@@ -1,0 +1,83 @@
+name: Florida arm64 16.5.9
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+          local-cache: false
+          link-to-sdk: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get install -y build-essential tree ninja-build gcc-multilib g++-multilib lib32stdc++-9-dev flex bison ruby ruby-dev python3-requests python3-setuptools python3-dev python3-pip libc6-dev libc6-dev-i386
+          sudo gem install fpm -v 1.11.0 --no-document
+          python3 -m pip install lief
+
+      - name: build Florida frida-server 16.5.9 (android-arm64)
+        shell: bash
+        run: |
+          set -e
+          git config --global user.email "ci@local"
+          git config --global user.name "ci"
+          export ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}
+
+          echo "::group::clone frida 16.5.9"
+          git clone --recurse-submodules --branch 16.5.9 https://github.com/frida/frida frida
+          echo "::endgroup::"
+
+          echo "::group::apply Florida patches (skip broken 0009)"
+          cd frida/subprojects/frida-core
+          for p in ../../../patches/frida-core/000[1-8]*.patch ../../../patches/frida-core/0010*.patch; do
+            echo "git am $(basename $p)"
+            git am "$p"
+          done
+          # 0009 (memfd name) targets lib/base/linux.vala which is absent in 16.5.9;
+          # apply the equivalent one-line rename to where the code actually lives here:
+          sed -i 's/memfd_create (name, 0)/memfd_create ("jit-cache", 0)/' src/linux/frida-helper-backend.vala
+          git add -A && git commit -m "Florida: memfd jit-cache (retargeted for 16.5.9)"
+          cd ../frida-gum
+          git am ../../../patches/frida-gum/*.patch
+          cd ../../..
+          echo "::endgroup::"
+
+          echo "::group::build android-arm64"
+          mkdir build-android-arm64
+          cd build-android-arm64
+          ../frida/configure --host=android-arm64
+          make
+          cd ..
+          echo "::endgroup::"
+
+          cp build-android-arm64/subprojects/frida-core/server/frida-server ./florida-server-16.5.9-android-arm64
+          ls -la ./florida-server-16.5.9-android-arm64
+          echo "=== stealth spot-check: these should be 0 or very low ==="
+          strings -a ./florida-server-16.5.9-android-arm64 | grep -c "gum-js-loop" || true
+          strings -a ./florida-server-16.5.9-android-arm64 | grep -c "frida-agent" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: florida-server-16.5.9-android-arm64
+          path: florida-server-16.5.9-android-arm64
