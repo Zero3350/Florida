@@ -22,7 +22,7 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r27
+          ndk-version: r25c
           local-cache: false
           link-to-sdk: true
 
@@ -34,7 +34,7 @@ jobs:
         run: |
           sudo apt-get update && DEBIAN_FRONTEND=noninteractive sudo apt-get install -y build-essential tree ninja-build gcc-multilib g++-multilib lib32stdc++-9-dev flex bison ruby ruby-dev python3-requests python3-setuptools python3-dev python3-pip libc6-dev libc6-dev-i386
           sudo gem install fpm -v 1.11.0 --no-document
-          python3 -m pip install lief
+          python3 -m pip install 'lief==1.0.0'
 
       - name: build Florida frida-server 16.5.9 (android-arm64)
         shell: bash
